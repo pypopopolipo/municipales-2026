@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+data/resultats_partial.json
+data/resultats_municipales_2026.json
+data/test_commune.html
+data/erreurs.json
+data/candidatures_france_tour1.csv
+data/communes_list.json
