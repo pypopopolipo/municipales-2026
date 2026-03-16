@@ -546,6 +546,7 @@ st.sidebar.markdown("---")
 page = st.sidebar.radio("Navigation", [
     "Vue nationale",
     "Carte de France",
+    "Grandes villes",
     "Communes disputees",
     "Maires sortants battus",
     "Par département",
@@ -773,6 +774,139 @@ elif page == "Carte de France":
         )
         fig.update_layout(height=650, margin=dict(l=0, r=0, t=0, b=0))
         st.plotly_chart(style_fig(fig), use_container_width=True)
+
+
+# ===========================
+# GRANDES VILLES
+# ===========================
+elif page == "Grandes villes":
+    st.header("Resultats des grandes villes")
+
+    # Seuil d'inscrits pour "grande ville"
+    seuil = st.select_slider(
+        "Taille minimum (inscrits)",
+        options=[5000, 10000, 20000, 50000, 100000],
+        value=20000,
+    )
+
+    # Filtrer les communes (inclure les secteurs PLM)
+    grandes = communes[communes["inscrits"] >= seuil].sort_values("inscrits", ascending=False).copy()
+
+    st.caption(f"{len(grandes)} communes de {seuil:,}+ inscrits")
+
+    # KPIs
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Communes", f"{len(grandes):,}")
+    col2.metric("Inscrits", f"{grandes['inscrits'].sum():,.0f}")
+    part_gv = grandes["votants"].sum() / grandes["inscrits"].sum() * 100 if grandes["inscrits"].sum() > 0 else 0
+    col3.metric("Participation moyenne", f"{part_gv:.1f}%")
+
+    st.markdown("---")
+
+    # Répartition par bloc dans les grandes villes
+    df_gv = df[df["slug"].isin(grandes["slug"])]
+    df_gv_pol = filter_nuances_fiables(df_gv)
+
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.subheader("Voix par nuance")
+        voix_gv = (
+            df_gv_pol.groupby("nuance_label")["candidat_voix"]
+            .sum().reset_index()
+            .rename(columns={"candidat_voix": "voix"})
+            .sort_values("voix", ascending=True)
+        )
+        if not voix_gv.empty:
+            fig = px.bar(
+                voix_gv, x="voix", y="nuance_label",
+                orientation="h", color="nuance_label",
+                color_discrete_map=COULEURS,
+                labels={"nuance_label": "", "voix": "Voix"},
+            )
+            fig.update_layout(showlegend=False, height=450)
+            st.plotly_chart(style_fig(fig), use_container_width=True)
+
+    with col_right:
+        st.subheader("Repartition par bloc")
+        voix_bloc = (
+            df_gv_pol.groupby("bloc")["candidat_voix"]
+            .sum().reset_index()
+            .rename(columns={"candidat_voix": "voix"})
+        )
+        if not voix_bloc.empty:
+            fig2 = px.pie(
+                voix_bloc, values="voix", names="bloc",
+                color="bloc", color_discrete_map=COULEURS_BLOCS, hole=0.4,
+            )
+            fig2.update_traces(textinfo="label+percent")
+            fig2.update_layout(height=450)
+            st.plotly_chart(style_fig(fig2), use_container_width=True)
+
+    # Classement des grandes villes par participation
+    st.markdown("---")
+    st.subheader("Participation par ville")
+
+    fig3 = px.bar(
+        grandes.head(40),
+        x="commune", y="participation_pct",
+        color="participation_pct",
+        color_continuous_scale=["#E74C3C", "#F2994A", "#27AE60"],
+        labels={"participation_pct": "Participation (%)", "commune": ""},
+    )
+    fig3.update_layout(xaxis_tickangle=-45, height=400)
+    st.plotly_chart(style_fig(fig3), use_container_width=True)
+
+    # Tableau : résultats ville par ville
+    st.markdown("---")
+    st.subheader("Resultats ville par ville")
+
+    ville_choice = st.selectbox(
+        "Choisir une ville",
+        options=grandes["slug"].tolist(),
+        format_func=lambda s: f"{grandes[grandes['slug']==s]['commune'].values[0]} "
+                              f"({grandes[grandes['slug']==s]['inscrits'].values[0]:,.0f} inscrits)",
+    )
+
+    if ville_choice:
+        ville_row = grandes[grandes["slug"] == ville_choice].iloc[0]
+        df_ville = df[df["slug"] == ville_choice]
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Inscrits", f"{ville_row['inscrits']:,.0f}")
+        col2.metric("Participation", f"{ville_row['participation_pct']:.1f}%")
+        col3.metric("Maire sortant", ville_row.get("maire_sortant", "—") or "—")
+
+        cands = df_ville[df_ville["candidat_nom"].notna()].sort_values("candidat_pourcentage", ascending=False)
+        if not cands.empty:
+            fig4 = px.bar(
+                cands,
+                x="candidat_pourcentage", y="candidat_nom",
+                orientation="h",
+                color="nuance_label",
+                color_discrete_map=COULEURS,
+                text=cands.apply(
+                    lambda r: f"{r['candidat_pourcentage']:.1f}% ({int(r['candidat_voix']):,} voix)"
+                    if pd.notna(r["candidat_pourcentage"]) else "", axis=1
+                ),
+                labels={"candidat_pourcentage": "% des exprimes", "candidat_nom": "", "nuance_label": "Nuance"},
+            )
+            fig4.update_layout(
+                yaxis={"categoryorder": "total ascending"},
+                height=max(300, len(cands) * 45),
+            )
+            fig4.update_traces(textposition="outside")
+            st.plotly_chart(style_fig(fig4), use_container_width=True)
+
+            st.dataframe(
+                cands[["candidat_nom", "candidat_etiquette", "nuance_label",
+                       "candidat_voix", "candidat_pourcentage", "candidat_elu"]].rename(columns={
+                    "candidat_nom": "Candidat", "candidat_etiquette": "Etiquette",
+                    "nuance_label": "Nuance", "candidat_voix": "Voix",
+                    "candidat_pourcentage": "%", "candidat_elu": "Elu",
+                }),
+                use_container_width=True, hide_index=True,
+            )
 
 
 # ===========================
