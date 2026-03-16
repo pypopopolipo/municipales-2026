@@ -16,6 +16,13 @@ def build_official_nuances_index():
 
     off = pd.read_csv(path, sep=";", encoding="utf-8", low_memory=False)
 
+    # Ajouter le CSV PLM (arrondissements Paris/Lyon/Marseille)
+    plm_path = "data/plm_candidatures.csv"
+    if os.path.exists(plm_path):
+        plm = pd.read_csv(plm_path, sep=";", encoding="utf-8", low_memory=False)
+        off = pd.concat([off, plm], ignore_index=True)
+        print(f"  CSV PLM ajoute : {len(plm):,} lignes")
+
     # Garder les têtes de liste avec nuance officielle
     tetes = off[off["Tête de liste"] == "OUI"].copy()
     tetes = tetes.dropna(subset=["Code nuance de liste"])
@@ -60,6 +67,11 @@ def normalize_commune(text):
     """Normalise un nom de commune pour le matching (plus agressif).
     Gère les variantes d'apostrophes mangées (Dascq→Ascq, Laumone→Aumone)."""
     text = normalize(text)
+    # Supprimer SECTEUR/ARRONDISSEMENT et codes postaux AVANT les articles
+    text = re.sub(r"\bSECTEUR\b", "", text)
+    text = re.sub(r"\bARRONDISSEMENT\b", "", text)
+    text = re.sub(r"\b\d{5}\b", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
     # Supprimer les articles/prepositions courants
     for word in ["L ", "LE ", "LA ", "LES ", "D ", "DU ", "DE ", "DES ",
                  "EN ", "SUR ", "SOUS ", "AUX ", "ET ", "SAINT ", "SAINTE ", "ST "]:
@@ -74,6 +86,8 @@ def normalize_commune(text):
         else:
             cleaned.append(w)
     text = " ".join(cleaned)
+    # Normaliser les ordinaux : 1ER, 2EME, 6EME → juste le numéro
+    text = re.sub(r"(\d+)\s*(ER|ERE|EME|E)\b", r"\1", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
